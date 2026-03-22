@@ -9,7 +9,7 @@ from google import genai
 from app.core.exceptions import AIConfigurationError, AIProviderError, AIResponseError
 from app.models.schemas import JobRecord
 
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 CODE_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 
 
