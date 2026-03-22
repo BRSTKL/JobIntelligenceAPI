@@ -54,3 +54,31 @@ class UpstreamSourceError(ApiError):
 
     def __init__(self, message: str, details: list[str] | None = None) -> None:
         super().__init__(502, "upstream_source_error", message, details)
+
+
+class RateLimitExceededError(ApiError):
+    """Raised when a client exceeds a configured request limit."""
+
+    def __init__(self, message: str, details: list[str] | None = None) -> None:
+        super().__init__(429, "rate_limit_exceeded", message, details)
+
+
+class AIConfigurationError(ApiError):
+    """Raised when AI features are requested without the required config."""
+
+    def __init__(self, message: str, details: list[str] | None = None) -> None:
+        super().__init__(503, "ai_configuration_error", message, details)
+
+
+class AIProviderError(ApiError):
+    """Raised when the AI provider request fails."""
+
+    def __init__(self, message: str, details: list[str] | None = None) -> None:
+        super().__init__(502, "ai_provider_error", message, details)
+
+
+class AIResponseError(ApiError):
+    """Raised when the AI provider returns invalid data."""
+
+    def __init__(self, message: str, details: list[str] | None = None) -> None:
+        super().__init__(502, "ai_response_error", message, details)

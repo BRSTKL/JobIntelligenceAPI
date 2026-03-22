@@ -182,6 +182,23 @@ def test_repository_falls_back_to_id_based_upsert_when_source_job_url_is_missing
     assert stored_job.source_job_url is None
 
 
+def test_repository_list_recent_jobs_respects_limit():
+    repository = SQLiteRepository(_memory_db_uri("repository-recent"))
+    repository.initialize()
+
+    repository.upsert_jobs(
+        [
+            _job("job-1", source_job_id="1001", source_job_url="https://example.com/jobs/1001", title="Alpha"),
+            _job("job-2", source_job_id="1002", source_job_url="https://example.com/jobs/1002", title="Beta"),
+            _job("job-3", source_job_id="1003", source_job_url="https://example.com/jobs/1003", title="Gamma"),
+        ]
+    )
+
+    recent_jobs = repository.list_recent_jobs(limit=2)
+
+    assert len(recent_jobs) == 2
+
+
 def test_repository_backfills_language_for_older_databases():
     repository = SQLiteRepository(_memory_db_uri("repository-language-backfill"))
 

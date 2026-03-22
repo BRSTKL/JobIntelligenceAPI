@@ -27,4 +27,5 @@ def require_api_key(
     if api_key not in valid_api_keys:
         raise AuthenticationInvalidError()
 
+    request.state.api_key = api_key
     return api_key

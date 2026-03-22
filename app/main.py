@@ -23,7 +23,9 @@ from app.core.config import (
 from app.core.exceptions import ApiError
 from app.core.logging import configure_logging, reset_request_id, set_request_id
 from app.core.responses import build_error_response
+from app.services.ai_rate_limiter import AIRateLimiter
 from app.services.cache import MemoryCache
+from app.services.gemini_client import GeminiClientService
 from app.services.intelligence import IntelligenceService
 from app.services.multi_source_fetcher import MultiSourceJobFetcher
 from app.services.normalizer import JobNormalizer
@@ -79,7 +81,7 @@ def _log_startup_summary(settings: Settings, api_key_count: int) -> None:
             "Application startup complete | service=%s version=%s host=0.0.0.0 port=%s "
             "sqlite_db_path=%s sources=arbeitnow=%s,remotive=%s,themuse=%s,kariyer=%s "
             "cache_ttl_seconds=%s default_page_size=%s max_page_size=%s "
-            "api_key_count=%s health_probe=/healthz"
+            "api_key_count=%s gemini_configured=%s health_probe=/healthz"
         ),
         settings.app_name,
         settings.app_version,
@@ -93,6 +95,7 @@ def _log_startup_summary(settings: Settings, api_key_count: int) -> None:
         settings.default_page_size,
         settings.max_page_size,
         api_key_count,
+        bool(settings.gemini_api_key),
     )
 
 
@@ -132,6 +135,8 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
     app.state.fetcher = MultiSourceJobFetcher(settings)
     app.state.parser = PublicJobParser()
     app.state.normalizer = JobNormalizer()
+    app.state.gemini_client = GeminiClientService(settings.gemini_api_key)
+    app.state.ai_rate_limiter = AIRateLimiter(limit=2, window_seconds=60)
     app.state.intelligence = IntelligenceService()
     app.state.repository = SQLiteRepository(settings.sqlite_db_path)
 

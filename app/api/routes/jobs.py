@@ -5,30 +5,43 @@ import math
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
-from fastapi import APIRouter, Path, Query, Request, Security
+from fastapi import APIRouter, Body, Path, Query, Request, Security
+from pydantic import ValidationError
 
 from app.api.docs import (
+    AI_CONFIGURATION_ERROR_EXAMPLE,
+    AI_PROVIDER_ERROR_EXAMPLE,
+    AI_RESPONSE_ERROR_EXAMPLE,
     AUTH_ERROR_RESPONSES,
     INTERNAL_ERROR_EXAMPLE,
+    RATE_LIMIT_EXAMPLE,
     UPSTREAM_ERROR_EXAMPLE,
     VALIDATION_ERROR_EXAMPLE,
     error_response_doc,
 )
 from app.core.auth import require_api_key
-from app.core.exceptions import NotFoundError, UpstreamSourceError
+from app.core.exceptions import AIResponseError, NotFoundError, UpstreamSourceError
 from app.core.responses import build_response_metadata
 from app.models.schemas import (
     EmploymentTypeEnum,
     JobDetailData,
     JobDetailEnvelope,
+    JobMatchData,
+    JobMatchEnvelope,
+    JobMatchRequest,
     JobRecord,
     RawJobListing,
     JobSearchData,
     JobSearchEnvelope,
+    MatchedJob,
     PaginationMeta,
     RemoteTypeEnum,
     SearchFilters,
     SeniorityLevelEnum,
+    SkillsGapData,
+    SkillsGapEnvelope,
+    SkillsGapRequest,
+    SkillsGapResult,
 )
 
 
@@ -98,6 +111,53 @@ JOB_NOT_FOUND_EXAMPLE = {
         "message": "Job 'missing-job-id' was not found.",
         "details": ["job_id=missing-job-id"],
     },
+}
+
+JOB_MATCH_REQUEST_EXAMPLE = {
+    "skills": ["python", "fastapi", "docker"],
+    "experience_years": 3,
+    "preferred_location": "Istanbul",
+    "remote_preferred": True,
+}
+
+JOB_MATCH_SUCCESS_EXAMPLE = {
+    "request_id": "9c37cf00-4b3d-4dd0-8ef0-b0f8f44f5103",
+    "timestamp": "2026-03-22T09:00:00Z",
+    "data": {
+        "skills": ["python", "fastapi", "docker"],
+        "experience_years": 3,
+        "preferred_location": "Istanbul",
+        "remote_preferred": True,
+        "count": 1,
+        "matches": [
+            {
+                "job": SEARCH_SUCCESS_EXAMPLE["data"]["jobs"][0],
+                "match_score": 100,
+            }
+        ],
+    },
+    "error": None,
+}
+
+SKILLS_GAP_REQUEST_EXAMPLE = {
+    "current_skills": ["python", "django"],
+    "target_job_title": "Senior DevOps Engineer",
+}
+
+SKILLS_GAP_SUCCESS_EXAMPLE = {
+    "request_id": "9c37cf00-4b3d-4dd0-8ef0-b0f8f44f5104",
+    "timestamp": "2026-03-22T09:00:00Z",
+    "data": {
+        "current_skills": ["python", "django"],
+        "target_job_title": "Senior DevOps Engineer",
+        "analysis": {
+            "missing_skills": ["kubernetes", "terraform"],
+            "learning_priority": "high",
+            "estimated_learning_time": "3-6 months",
+            "recommended_resources": ["resource1", "resource2"],
+        },
+    },
+    "error": None,
 }
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"], dependencies=[Security(require_api_key)])
@@ -254,6 +314,27 @@ def _filter_jobs(
             (job.title or "").lower(),
         ),
     )
+
+
+def _unique_job_ids(job_ids: list[str], valid_ids: set[str], limit: int = 5) -> list[str]:
+    """Keep valid Gemini job IDs unique and ordered."""
+    unique_ids: list[str] = []
+    seen_ids: set[str] = set()
+
+    for job_id in job_ids:
+        if job_id not in valid_ids or job_id in seen_ids:
+            continue
+        seen_ids.add(job_id)
+        unique_ids.append(job_id)
+        if len(unique_ids) >= limit:
+            break
+
+    return unique_ids
+
+
+def _match_score_for_rank(rank: int) -> int:
+    """Map ranked Gemini matches onto a simple 1-100 score scale."""
+    return max(100 - (rank * 10), 10)
 
 
 @router.get(
@@ -417,5 +498,133 @@ def get_job(
     return JobDetailEnvelope(
         **build_response_metadata(request),
         data=JobDetailData(job=job),
+        error=None,
+    )
+
+
+@router.post(
+    "/match",
+    response_model=JobMatchEnvelope,
+    summary="Match a candidate profile to stored jobs",
+    description=(
+        "Read recent jobs from the local database, ask Gemini for the best matching job IDs, "
+        "and return the top matches with a simple rank-based match score."
+    ),
+    response_description="Standard success envelope containing matched jobs and scores.",
+    responses={
+        **AUTH_ERROR_RESPONSES,
+        200: {"description": "Job matches returned successfully.", "content": {"application/json": {"example": JOB_MATCH_SUCCESS_EXAMPLE}}},
+        422: error_response_doc("Request validation failed.", VALIDATION_ERROR_EXAMPLE),
+        429: error_response_doc("AI endpoint rate limit exceeded.", RATE_LIMIT_EXAMPLE),
+        502: error_response_doc("Gemini request failed or returned invalid JSON.", AI_PROVIDER_ERROR_EXAMPLE),
+        503: error_response_doc("Gemini is not configured.", AI_CONFIGURATION_ERROR_EXAMPLE),
+        500: error_response_doc("Unexpected server error.", INTERNAL_ERROR_EXAMPLE),
+    },
+)
+def match_jobs(
+    request: Request,
+    payload: JobMatchRequest = Body(
+        openapi_examples={"default": {"summary": "Candidate profile", "value": JOB_MATCH_REQUEST_EXAMPLE}}
+    ),
+) -> JobMatchEnvelope:
+    repository = request.app.state.repository
+    gemini_client = request.app.state.gemini_client
+    ai_rate_limiter = request.app.state.ai_rate_limiter
+    api_key = getattr(request.state, "api_key", None)
+
+    if api_key:
+        ai_rate_limiter.enforce(api_key)
+
+    recent_jobs = repository.list_recent_jobs(limit=100)
+    if not recent_jobs:
+        return JobMatchEnvelope(
+            **build_response_metadata(request),
+            data=JobMatchData(
+                skills=payload.skills,
+                experience_years=payload.experience_years,
+                preferred_location=payload.preferred_location,
+                remote_preferred=payload.remote_preferred,
+                count=0,
+                matches=[],
+            ),
+            error=None,
+        )
+
+    returned_ids = gemini_client.match_jobs(
+        skills=payload.skills,
+        experience_years=payload.experience_years,
+        preferred_location=payload.preferred_location,
+        remote_preferred=payload.remote_preferred,
+        jobs=recent_jobs,
+    )
+    jobs_by_id = {job.id: job for job in recent_jobs}
+    ranked_ids = _unique_job_ids(returned_ids, set(jobs_by_id))
+    matches = [
+        MatchedJob(job=jobs_by_id[job_id], match_score=_match_score_for_rank(index))
+        for index, job_id in enumerate(ranked_ids)
+    ]
+
+    return JobMatchEnvelope(
+        **build_response_metadata(request),
+        data=JobMatchData(
+            skills=payload.skills,
+            experience_years=payload.experience_years,
+            preferred_location=payload.preferred_location,
+            remote_preferred=payload.remote_preferred,
+            count=len(matches),
+            matches=matches,
+        ),
+        error=None,
+    )
+
+
+@router.post(
+    "/skills-gap",
+    response_model=SkillsGapEnvelope,
+    summary="Estimate missing skills for a target role",
+    description=(
+        "Ask Gemini to compare the user's current skills with a target job title and "
+        "return a structured missing-skills summary."
+    ),
+    response_description="Standard success envelope containing a structured skills-gap analysis.",
+    responses={
+        **AUTH_ERROR_RESPONSES,
+        200: {"description": "Skills-gap analysis returned successfully.", "content": {"application/json": {"example": SKILLS_GAP_SUCCESS_EXAMPLE}}},
+        422: error_response_doc("Request validation failed.", VALIDATION_ERROR_EXAMPLE),
+        429: error_response_doc("AI endpoint rate limit exceeded.", RATE_LIMIT_EXAMPLE),
+        502: error_response_doc("Gemini request failed or returned invalid JSON.", AI_RESPONSE_ERROR_EXAMPLE),
+        503: error_response_doc("Gemini is not configured.", AI_CONFIGURATION_ERROR_EXAMPLE),
+        500: error_response_doc("Unexpected server error.", INTERNAL_ERROR_EXAMPLE),
+    },
+)
+def skills_gap(
+    request: Request,
+    payload: SkillsGapRequest = Body(
+        openapi_examples={"default": {"summary": "Skills gap input", "value": SKILLS_GAP_REQUEST_EXAMPLE}}
+    ),
+) -> SkillsGapEnvelope:
+    gemini_client = request.app.state.gemini_client
+    ai_rate_limiter = request.app.state.ai_rate_limiter
+    api_key = getattr(request.state, "api_key", None)
+
+    if api_key:
+        ai_rate_limiter.enforce(api_key)
+
+    analysis_payload = gemini_client.analyze_skills_gap(
+        current_skills=payload.current_skills,
+        target_job_title=payload.target_job_title,
+    )
+    try:
+        analysis = SkillsGapResult.model_validate(analysis_payload)
+    except ValidationError as exc:
+        raise AIResponseError("Gemini returned JSON in an unexpected shape.", details=[str(exc)]) from exc
+
+    return SkillsGapEnvelope(
+        **build_response_metadata(request),
+        data=SkillsGapData(
+            current_skills=payload.current_skills,
+            target_job_title=payload.target_job_title,
+            analysis=analysis,
+        ),
         error=None,
     )

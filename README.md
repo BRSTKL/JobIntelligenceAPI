@@ -34,6 +34,7 @@ Job Intelligence API helps by turning multiple public job sources, including Tur
 - Keep your dataset cleaner with built-in duplicate handling
 - Build search, matching, and analytics features on normalized job records
 - Turn stored listings into usable market signals with skills, company, location, and lightweight language hints
+- Add AI-powered job matching and skills-gap guidance on top of stored jobs
 - Integrate quickly with simple API key auth and predictable JSON responses
 - Start small and stay practical with a beginner-friendly setup, Swagger docs, and Docker support
 
@@ -275,6 +276,30 @@ curl -H "X-API-Key: your_api_key_here" "http://127.0.0.1:8000/insights/locations
 
 Example result: top normalized job locations currently seen in the stored dataset.
 
+### Match Candidate Skills to Jobs
+
+```bash
+curl -X POST \
+  -H "X-API-Key: your_api_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{"skills":["python","fastapi","docker"],"experience_years":3,"preferred_location":"Istanbul","remote_preferred":true}' \
+  "http://127.0.0.1:8000/jobs/match"
+```
+
+This endpoint reads recent jobs from the local database, asks Gemini for the best matching job IDs, and returns matched job records with simple rank-based scores.
+
+### Find Skill Gaps for a Target Role
+
+```bash
+curl -X POST \
+  -H "X-API-Key: your_api_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{"current_skills":["python","django"],"target_job_title":"Senior DevOps Engineer"}' \
+  "http://127.0.0.1:8000/jobs/skills-gap"
+```
+
+This endpoint asks Gemini for a structured skill-gap summary and returns missing skills, learning priority, estimated time, and suggested resources.
+
 ### Filter Turkey-Related Jobs
 
 ```bash
@@ -382,6 +407,7 @@ Helpful optional variables:
 - `REMOTIVE_SOURCE_URL`: defaults to the Remotive public job API
 - `THEMUSE_SOURCE_URL`: defaults to The Muse public jobs API
 - `KARIYER_SOURCE_URL`: defaults to a public Kariyer software jobs listing page
+- `GEMINI_API_KEY`: required for `/jobs/match` and `/jobs/skills-gap`
 - `LOG_LEVEL`: defaults to `INFO`
 
 ### First Requests to Try

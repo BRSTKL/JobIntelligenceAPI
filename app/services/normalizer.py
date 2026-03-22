@@ -214,7 +214,7 @@ IGNORED_SKILL_TAGS = {
     "temporary",
     "worldwide",
 }
-TURKISH_TITLE_CHARACTERS = set("çğıöşüÇĞİÖŞÜı")
+TURKISH_TITLE_CHARACTERS = set("\u00e7\u011f\u0131\u00f6\u015f\u00fc\u00c7\u011e\u0130\u00d6\u015e\u00dc\u0131")
 
 
 class JobNormalizer:

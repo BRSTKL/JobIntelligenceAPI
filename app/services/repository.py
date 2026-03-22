@@ -127,6 +127,24 @@ class SQLiteRepository:
 
         return [self._row_to_job(row) for row in rows]
 
+    def list_recent_jobs(self, limit: int = 100) -> list[JobRecord]:
+        """Return the most recent stored jobs using the repository's stable sort order."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM jobs
+                ORDER BY
+                    CASE WHEN freshness_days IS NULL THEN 1 ELSE 0 END,
+                    freshness_days ASC,
+                    title ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+        return [self._row_to_job(row) for row in rows]
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path, uri=self._use_uri, check_same_thread=False)
         connection.row_factory = sqlite3.Row

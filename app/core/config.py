@@ -92,6 +92,7 @@ class Settings:
     port: int = 8000
     log_level: str = "INFO"
     api_keys: tuple[str, ...] = ()
+    gemini_api_key: str | None = None
 
     @classmethod
     def from_env(cls, env_path: str | os.PathLike[str] = ".env") -> "Settings":
@@ -114,6 +115,7 @@ class Settings:
             port=_get_int_env("PORT", defaults.port),
             log_level=os.getenv("LOG_LEVEL", defaults.log_level),
             api_keys=_get_csv_env("API_KEYS", defaults.api_keys),
+            gemini_api_key=os.getenv("GEMINI_API_KEY", defaults.gemini_api_key),
         )
         settings.validate()
         return settings
@@ -131,6 +133,8 @@ class Settings:
         self.themuse_source_url = self.themuse_source_url.strip()
         self.kariyer_source_url = self.kariyer_source_url.strip()
         self.log_level = self.log_level.strip().upper()
+        if self.gemini_api_key is not None:
+            self.gemini_api_key = self.gemini_api_key.strip() or None
 
         self._validate_required_text("APP_NAME", self.app_name, errors)
         self._validate_required_text("APP_VERSION", self.app_version, errors)

@@ -143,6 +143,59 @@ class JobDetailEnvelope(BaseModel):
     error: ErrorInfo | None = None
 
 
+class JobMatchRequest(BaseModel):
+    skills: list[str] = Field(..., min_length=1)
+    experience_years: int = Field(..., ge=0)
+    preferred_location: str | None = None
+    remote_preferred: bool | None = None
+
+
+class MatchedJob(BaseModel):
+    job: JobRecord
+    match_score: int = Field(..., ge=1, le=100)
+
+
+class JobMatchData(BaseModel):
+    skills: list[str]
+    experience_years: int
+    preferred_location: str | None = None
+    remote_preferred: bool | None = None
+    count: int
+    matches: list[MatchedJob]
+
+
+class JobMatchEnvelope(BaseModel):
+    request_id: str
+    timestamp: datetime
+    data: JobMatchData
+    error: ErrorInfo | None = None
+
+
+class SkillsGapRequest(BaseModel):
+    current_skills: list[str] = Field(..., min_length=1)
+    target_job_title: str = Field(..., min_length=1)
+
+
+class SkillsGapResult(BaseModel):
+    missing_skills: list[str] = Field(default_factory=list)
+    learning_priority: str
+    estimated_learning_time: str
+    recommended_resources: list[str] = Field(default_factory=list)
+
+
+class SkillsGapData(BaseModel):
+    current_skills: list[str]
+    target_job_title: str
+    analysis: SkillsGapResult
+
+
+class SkillsGapEnvelope(BaseModel):
+    request_id: str
+    timestamp: datetime
+    data: SkillsGapData
+    error: ErrorInfo | None = None
+
+
 class InsightItem(BaseModel):
     name: str
     count: int
