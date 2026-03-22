@@ -18,6 +18,7 @@ class SourceDefinition:
 
     name: str
     url: str
+    payload_type: str = "json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,7 @@ class SourcePayload:
     source: str
     url: str
     body: str
+    payload_type: str = "json"
 
 
 class MultiSourceJobFetcher:
@@ -68,7 +70,14 @@ class MultiSourceJobFetcher:
                     logger.warning("Skipping public source '%s' because the response body was empty.", source.name)
                     continue
 
-                payloads.append(SourcePayload(source=source.name, url=source.url, body=body))
+                payloads.append(
+                    SourcePayload(
+                        source=source.name,
+                        url=source.url,
+                        payload_type=source.payload_type,
+                        body=body,
+                    )
+                )
 
         if payloads:
             return payloads
@@ -84,6 +93,7 @@ class MultiSourceJobFetcher:
             SourceDefinition(name="arbeitnow", url=self.settings.arbeitnow_source_url),
             SourceDefinition(name="remotive", url=self.settings.remotive_source_url),
             SourceDefinition(name="themuse", url=self.settings.themuse_source_url),
+            SourceDefinition(name="kariyer", url=self.settings.kariyer_source_url, payload_type="html"),
         ]
 
     @staticmethod

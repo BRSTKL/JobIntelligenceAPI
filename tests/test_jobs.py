@@ -63,6 +63,20 @@ THEMUSE_PAYLOAD = """
 }
 """
 
+KARIYER_PAYLOAD = """
+<html>
+  <body>
+    <div data-testid="job-item">
+      <a data-testid="job-title" href="/is-ilani/yazilim-gelistirici-4001">
+        Yazılım Geliştirici
+      </a>
+      <div data-testid="company-name">Turkish Software House</div>
+      <div data-testid="job-location">Istanbul, Turkey</div>
+    </div>
+  </body>
+</html>
+"""
+
 
 def _memory_db_uri(filename: str) -> str:
     return f"file:{filename}-{uuid4().hex}?mode=memory&cache=shared"
@@ -111,11 +125,13 @@ def test_jobs_search_returns_normalized_jobs(monkeypatch):
     payload = response.json()
     assert payload["error"] is None
     assert payload["data"]["query"] == "python"
+    assert payload["data"]["filters"]["country"] is None
     assert payload["data"]["filters"]["employment_type"] == "full_time"
     assert payload["data"]["count"] == 1
     assert payload["data"]["pagination"]["total_results"] == 1
     assert payload["data"]["jobs"][0]["company"] == "Acme"
     assert payload["data"]["jobs"][0]["source"] == "arbeitnow"
+    assert payload["data"]["jobs"][0]["language"] == "en"
     assert payload["data"]["jobs"][0]["normalized_title"] == "Python Backend Engineer"
     assert payload["data"]["jobs"][0]["remote_type"] == "remote"
     assert payload["data"]["jobs"][0]["skills"] == ["aws", "docker", "fastapi", "python"]
@@ -140,6 +156,7 @@ def test_jobs_search_supports_pagination_and_job_detail(monkeypatch):
     assert detail_payload["error"] is None
     assert detail_payload["data"]["job"]["id"] == job_id
     assert detail_payload["data"]["job"]["source"] == "remotive"
+    assert detail_payload["data"]["job"]["language"] == "en"
 
 
 def test_jobs_search_validates_inputs_and_handles_missing_job(monkeypatch):
@@ -204,6 +221,7 @@ def test_jobs_search_handles_partial_records_without_crashing(monkeypatch):
 
     partial_company_job = next(job for job in payload["data"]["jobs"] if job["source_job_id"] == "partial-1")
     assert partial_company_job["company"] == "Partial Co"
+    assert partial_company_job["language"] == "en"
     assert partial_company_job["source_job_url"] is None
     assert partial_company_job["remote_type"] is None
     assert partial_company_job["employment_type"] is None
@@ -212,8 +230,33 @@ def test_jobs_search_handles_partial_records_without_crashing(monkeypatch):
 
     partial_attr_job = next(job for job in payload["data"]["jobs"] if job["source_job_id"] == "3002")
     assert partial_attr_job["title"] == "Platform Engineer"
+    assert partial_attr_job["language"] == "en"
     assert partial_attr_job["skills"] == []
     assert partial_attr_job["freshness_days"] is None
+
+
+def test_jobs_search_supports_country_tr_filter(monkeypatch):
+    turkish_payloads = _sample_source_payloads() + [
+        SourcePayload(
+            source="kariyer",
+            url="https://www.kariyer.net/is-ilanlari/yazilim",
+            body=KARIYER_PAYLOAD,
+            payload_type="html",
+        )
+    ]
+    app = _build_test_app(monkeypatch, payloads=turkish_payloads)
+
+    with TestClient(app) as client:
+        response = client.get("/jobs/search", headers=_auth_headers(), params={"country": "TR"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["error"] is None
+    assert payload["data"]["filters"]["country"] == "TR"
+    assert payload["data"]["count"] == 1
+    assert payload["data"]["jobs"][0]["source"] == "kariyer"
+    assert payload["data"]["jobs"][0]["language"] == "tr"
+    assert payload["data"]["jobs"][0]["location_raw"] == "Istanbul, Turkey"
 
 
 def test_jobs_endpoints_reject_missing_and_invalid_api_keys(monkeypatch):

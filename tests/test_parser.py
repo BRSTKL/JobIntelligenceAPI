@@ -78,6 +78,30 @@ THEMUSE_FEED = """
 }
 """
 
+KARIYER_HTML = """
+<html>
+  <body>
+    <div data-testid="job-item">
+      <a data-testid="job-title" href="/is-ilani/python-gelistirici-12345">
+        Python Geliştirici
+      </a>
+      <div data-testid="company-name">Acme Turkey</div>
+      <div data-testid="job-location">Istanbul, Turkey</div>
+    </div>
+    <div data-testid="job-item">
+      <a data-testid="job-title" href="/is-ilani/backend-engineer-999">
+        Backend Engineer
+      </a>
+      <div data-testid="company-name">Remote TR</div>
+      <div data-testid="job-location">Ankara, TR</div>
+    </div>
+    <div data-testid="job-item">
+      <div data-testid="company-name">Broken Card Co</div>
+    </div>
+  </body>
+</html>
+"""
+
 
 def test_parser_handles_malformed_and_partial_rows_without_crashing():
     parser = PublicJobParser("https://remoteok.com")
@@ -136,3 +160,29 @@ def test_parser_supports_multiple_public_json_sources():
     assert themuse_job.company == "Muse Labs"
     assert themuse_job.location_raw == "Remote, New York, NY"
     assert themuse_job.source_job_url == "https://example.com/jobs/3001"
+
+
+def test_parser_supports_kariyer_html_cards_and_relative_urls():
+    parser = PublicJobParser()
+
+    jobs = parser.parse_source_payloads(
+        [
+            SourcePayload(
+                source="kariyer",
+                url="https://www.kariyer.net/is-ilanlari/yazilim",
+                body=KARIYER_HTML,
+                payload_type="html",
+            )
+        ]
+    )
+
+    assert len(jobs) == 3
+
+    turkish_job = next(job for job in jobs if job.company == "Acme Turkey")
+    assert turkish_job.title == "Python Geliştirici"
+    assert turkish_job.location_raw == "Istanbul, Turkey"
+    assert turkish_job.source_job_url == "https://www.kariyer.net/is-ilani/python-gelistirici-12345"
+
+    partial_job = next(job for job in jobs if job.company == "Broken Card Co")
+    assert partial_job.title is None
+    assert partial_job.source_job_url is None

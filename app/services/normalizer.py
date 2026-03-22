@@ -11,6 +11,7 @@ from pydantic import HttpUrl, TypeAdapter, ValidationError
 from app.models.schemas import (
     EmploymentTypeEnum,
     JobRecord,
+    LanguageCodeEnum,
     RawJobListing,
     RemoteTypeEnum,
     SeniorityLevelEnum,
@@ -213,6 +214,7 @@ IGNORED_SKILL_TAGS = {
     "temporary",
     "worldwide",
 }
+TURKISH_TITLE_CHARACTERS = set("çğıöşüÇĞİÖŞÜı")
 
 
 class JobNormalizer:
@@ -252,6 +254,7 @@ class JobNormalizer:
             source=source_name,
             source_job_id=source_job_id,
             source_job_url=safe_source_job_url,
+            language=self._detect_language(raw_job.title),
             title=raw_job.title,
             normalized_title=self._normalize_title(raw_job.title),
             company=raw_job.company,
@@ -267,6 +270,13 @@ class JobNormalizer:
             posted_at=posted_at,
             freshness_days=self._calculate_freshness_days(posted_at),
         )
+
+    def _detect_language(self, title: str | None) -> LanguageCodeEnum:
+        """Detect a simple tr/en language hint from Turkish title characters."""
+        cleaned_title = self._clean_text(title) or ""
+        if any(character in TURKISH_TITLE_CHARACTERS for character in cleaned_title):
+            return LanguageCodeEnum.tr
+        return LanguageCodeEnum.en
 
     def _build_identity(self, source_name: str, source_job_id: str, source_job_url: str | None) -> str:
         """Build a stable identity string for hashing into the internal job ID."""

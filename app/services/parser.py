@@ -28,6 +28,37 @@ DESCRIPTION_SELECTORS = (".description", ".description p", ".description-text", 
 EMPLOYMENT_SELECTORS = (".employment", "[data-employment]")
 REMOTE_SELECTORS = (".remote", "[data-remote]")
 TAG_SELECTORS = (".tags h3", ".tags .tag", ".tag", ".skill", "[data-tag]")
+KARIYER_JOB_NODE_SELECTORS = (
+    "div[data-testid='job-item']",
+    "div[class*='job-card']",
+    "div[class*='list-item']",
+    "article[class*='job']",
+    "li[class*='job']",
+)
+KARIYER_LINK_SELECTORS = (
+    "a[data-testid='job-title']",
+    "a[class*='job-title']",
+    "h3 a",
+    "h2 a",
+    "a[href]",
+)
+KARIYER_TITLE_SELECTORS = (
+    "[data-testid='job-title']",
+    "h3",
+    "h2",
+    "[class*='job-title']",
+    "[class*='title']",
+)
+KARIYER_COMPANY_SELECTORS = (
+    "[data-testid='company-name']",
+    "[class*='company-name']",
+    "[class*='company']",
+)
+KARIYER_LOCATION_SELECTORS = (
+    "[data-testid='job-location']",
+    "[class*='location']",
+    "[class*='city']",
+)
 
 
 class RemoteOkParser:
@@ -382,6 +413,7 @@ class PublicJobParser(RemoteOkParser):
             source_payload.body,
             source=source_payload.source,
             source_url=source_payload.url,
+            payload_type=source_payload.payload_type,
         )
 
     def parse_jobs(
@@ -389,11 +421,15 @@ class PublicJobParser(RemoteOkParser):
         html: str | None,
         source: str | None = None,
         source_url: str | None = None,
+        payload_type: str | None = None,
     ) -> list[RawJobListing]:
         """Parse either supported JSON payloads or the legacy HTML fixture format."""
         payload = (html or "").strip()
         if not payload:
             return []
+
+        if payload_type == "html" and source == "kariyer":
+            return self._parse_kariyer_html(payload, source_url)
 
         if self._looks_like_json(payload):
             return self._parse_json_payload(payload, source)
@@ -409,6 +445,28 @@ class PublicJobParser(RemoteOkParser):
         if source:
             for job in jobs:
                 job.source = source
+        return jobs
+
+    def _parse_kariyer_html(self, payload: str, source_url: str | None) -> list[RawJobListing]:
+        """Parse Kariyer listing pages into raw listing records without raising on bad cards."""
+        soup = BeautifulSoup(payload, "html.parser")
+        job_nodes = self._find_first_matching_nodes(soup, KARIYER_JOB_NODE_SELECTORS)
+        jobs: list[RawJobListing] = []
+        seen_keys: set[str] = set()
+        base_url = source_url or self.base_url
+
+        for node in job_nodes:
+            job = self._safe_parse_kariyer_node(node, base_url)
+            if job is None or not self._has_usable_content(job):
+                continue
+
+            dedupe_key = self._build_dedupe_key(job)
+            if dedupe_key in seen_keys:
+                continue
+
+            seen_keys.add(dedupe_key)
+            jobs.append(job)
+
         return jobs
 
     def _parse_json_payload(self, payload: str, source: str | None) -> list[RawJobListing]:
@@ -477,6 +535,14 @@ class PublicJobParser(RemoteOkParser):
             logger.warning("Skipping malformed JSON job record during parse.", exc_info=True)
             return None
 
+    def _safe_parse_kariyer_node(self, node: Tag, base_url: str) -> RawJobListing | None:
+        """Parse one Kariyer card and skip it if something unexpected goes wrong."""
+        try:
+            return self._build_kariyer_listing(node, base_url)
+        except Exception:
+            logger.warning("Skipping malformed Kariyer job card during parse.", exc_info=True)
+            return None
+
     def _build_arbeitnow_listing(self, record: dict[str, object]) -> RawJobListing:
         """Build one raw listing from the Arbeitnow job board API."""
         return RawJobListing(
@@ -542,6 +608,24 @@ class PublicJobParser(RemoteOkParser):
             remote_type_raw="remote" if location_raw and "remote" in location_raw.lower() else None,
         )
 
+    def _build_kariyer_listing(self, node: Tag, base_url: str) -> RawJobListing:
+        """Build one raw listing from a Kariyer job card."""
+        source_job_url = self._find_first_link(node, KARIYER_LINK_SELECTORS, base_url)
+        return RawJobListing(
+            source="kariyer",
+            source_job_id=source_job_url or self._read_first_attribute(node, ("data-id", "id")),
+            source_job_url=source_job_url,
+            title=self._read_first_text(node, KARIYER_TITLE_SELECTORS),
+            company=self._read_first_text(node, KARIYER_COMPANY_SELECTORS),
+            location_raw=self._read_first_text(node, KARIYER_LOCATION_SELECTORS),
+            salary_text=None,
+            description_text=None,
+            tags=[],
+            posted_at_raw=None,
+            employment_type_raw=None,
+            remote_type_raw=None,
+        )
+
     def _flatten_themuse_locations(self, value: object | None) -> str | None:
         """Turn The Muse location arrays into one readable location string."""
         if not isinstance(value, list):
@@ -572,6 +656,28 @@ class PublicJobParser(RemoteOkParser):
                 return None
             current = current.get(key)
         return self._clean_text(current)
+
+    def _find_first_matching_nodes(self, soup: BeautifulSoup, selectors: Iterable[str]) -> list[Tag]:
+        """Return the first non-empty selector result from a list of card selectors."""
+        for selector in selectors:
+            nodes = soup.select(selector)
+            if nodes:
+                return [node for node in nodes if isinstance(node, Tag)]
+        return []
+
+    def _find_first_link(self, node: Tag, selectors: Iterable[str], base_url: str) -> str | None:
+        """Return the first usable absolute link from a set of selectors."""
+        for selector in selectors:
+            link = node.select_one(selector)
+            if link is None:
+                continue
+
+            href = self._clean_text(link.get("href"))
+            if href is None or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                continue
+
+            return urljoin(base_url, href)
+        return None
 
     def _build_remote_type_from_boolean(self, value: object | None) -> str | None:
         """Map a boolean-like source value to a normalized remote hint."""

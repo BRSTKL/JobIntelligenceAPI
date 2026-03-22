@@ -84,6 +84,7 @@ class Settings:
     arbeitnow_source_url: str = "https://www.arbeitnow.com/api/job-board-api"
     remotive_source_url: str = "https://remotive.com/api/remote-jobs"
     themuse_source_url: str = "https://www.themuse.com/api/public/jobs?page=1"
+    kariyer_source_url: str = "https://www.kariyer.net/is-ilanlari/yazilim"
     http_timeout_seconds: int = 15
     cache_ttl_seconds: int = 300
     default_page_size: int = 10
@@ -105,6 +106,7 @@ class Settings:
             arbeitnow_source_url=os.getenv("ARBEITNOW_SOURCE_URL", defaults.arbeitnow_source_url),
             remotive_source_url=os.getenv("REMOTIVE_SOURCE_URL", defaults.remotive_source_url),
             themuse_source_url=os.getenv("THEMUSE_SOURCE_URL", defaults.themuse_source_url),
+            kariyer_source_url=os.getenv("KARIYER_SOURCE_URL", defaults.kariyer_source_url),
             http_timeout_seconds=_get_int_env("HTTP_TIMEOUT_SECONDS", defaults.http_timeout_seconds),
             cache_ttl_seconds=_get_int_env("CACHE_TTL_SECONDS", defaults.cache_ttl_seconds),
             default_page_size=_get_int_env("DEFAULT_PAGE_SIZE", defaults.default_page_size),
@@ -127,6 +129,7 @@ class Settings:
         self.arbeitnow_source_url = self.arbeitnow_source_url.strip()
         self.remotive_source_url = self.remotive_source_url.strip()
         self.themuse_source_url = self.themuse_source_url.strip()
+        self.kariyer_source_url = self.kariyer_source_url.strip()
         self.log_level = self.log_level.strip().upper()
 
         self._validate_required_text("APP_NAME", self.app_name, errors)
@@ -136,6 +139,7 @@ class Settings:
         self._validate_required_text("ARBEITNOW_SOURCE_URL", self.arbeitnow_source_url, errors)
         self._validate_required_text("REMOTIVE_SOURCE_URL", self.remotive_source_url, errors)
         self._validate_required_text("THEMUSE_SOURCE_URL", self.themuse_source_url, errors)
+        self._validate_required_text("KARIYER_SOURCE_URL", self.kariyer_source_url, errors)
 
         self._validate_positive_int("HTTP_TIMEOUT_SECONDS", self.http_timeout_seconds, errors)
         self._validate_positive_int("CACHE_TTL_SECONDS", self.cache_ttl_seconds, errors)
@@ -145,6 +149,7 @@ class Settings:
         self._validate_source_url("ARBEITNOW_SOURCE_URL", self.arbeitnow_source_url, errors)
         self._validate_source_url("REMOTIVE_SOURCE_URL", self.remotive_source_url, errors)
         self._validate_source_url("THEMUSE_SOURCE_URL", self.themuse_source_url, errors)
+        self._validate_source_url("KARIYER_SOURCE_URL", self.kariyer_source_url, errors)
         self._validate_log_level(errors)
 
         if self.default_page_size > self.max_page_size:

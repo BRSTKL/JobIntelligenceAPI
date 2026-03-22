@@ -40,6 +40,7 @@ SEARCH_SUCCESS_EXAMPLE = {
     "data": {
         "query": "python",
         "filters": {
+            "country": None,
             "location": None,
             "remote": True,
             "employment_type": "full_time",
@@ -58,6 +59,7 @@ SEARCH_SUCCESS_EXAMPLE = {
                 "source": "arbeitnow",
                 "source_job_id": "1001",
                 "source_job_url": "https://www.arbeitnow.com/jobs/1001",
+                "language": "en",
                 "title": "Senior Python Backend Engineer",
                 "normalized_title": "Python Backend Engineer",
                 "company": "Acme",
@@ -141,6 +143,7 @@ def _deduplicate_raw_jobs(raw_jobs: list[RawJobListing]) -> list[RawJobListing]:
 
 def _cache_key(
     query: str | None,
+    country: str | None,
     location: str | None,
     remote: bool | None,
     employment_type: EmploymentTypeEnum | None,
@@ -149,6 +152,7 @@ def _cache_key(
     # The cache stores the normalized result set for a logical search, not a page slice.
     parts = [
         (query or "").strip().lower(),
+        (country or "").strip().lower(),
         (location or "").strip().lower(),
         str(remote),
         employment_type.value if employment_type else "",
@@ -184,6 +188,31 @@ def _matches_location(job: JobRecord, location: str | None) -> bool:
     return location.lower() in haystack
 
 
+def _matches_country(job: JobRecord, country: str | None) -> bool:
+    if not country:
+        return True
+
+    haystack = " ".join(filter(None, [job.location_raw, job.location_city, job.location_country])).lower()
+    cleaned_country = country.strip().lower()
+
+    if cleaned_country == "tr":
+        turkish_keywords = (
+            "turkey",
+            "turkiye",
+            "türkiye",
+            "istanbul",
+            "i̇stanbul",
+            "ankara",
+            "izmir",
+            "i̇zmir",
+            " tr ",
+        )
+        normalized_haystack = f" {haystack} "
+        return any(keyword in normalized_haystack for keyword in turkish_keywords)
+
+    return cleaned_country in haystack
+
+
 def _matches_remote(job: JobRecord, remote: bool | None) -> bool:
     if remote is None:
         return True
@@ -195,6 +224,7 @@ def _matches_remote(job: JobRecord, remote: bool | None) -> bool:
 def _filter_jobs(
     jobs: list[JobRecord],
     query: str | None,
+    country: str | None,
     location: str | None,
     remote: bool | None,
     employment_type: EmploymentTypeEnum | None,
@@ -203,6 +233,8 @@ def _filter_jobs(
     filtered_jobs = []
     for job in jobs:
         if not _matches_query(job, query):
+            continue
+        if not _matches_country(job, country):
             continue
         if not _matches_location(job, location):
             continue
@@ -255,6 +287,10 @@ async def search_jobs(
         default=None,
         description="Optional free-text query matched against job title, company, description snippet, and extracted skills.",
     ),
+    country: str | None = Query(
+        default=None,
+        description="Optional country filter. Use TR to keep Turkey-related jobs by matching Turkey, Türkiye, Istanbul, Ankara, Izmir, or TR in the stored location fields.",
+    ),
     location: str | None = Query(default=None, description="Optional free-text location filter."),
     page: int = Query(default=1, ge=1, description="1-based page number for paginated results."),
     limit: int | None = Query(
@@ -284,13 +320,14 @@ async def search_jobs(
     repository = request.app.state.repository
 
     filters = SearchFilters(
+        country=country,
         location=location,
         remote=remote,
         employment_type=employment_type,
         seniority=seniority,
     )
 
-    search_key = _cache_key(q, location, remote, employment_type, seniority)
+    search_key = _cache_key(q, country, location, remote, employment_type, seniority)
     normalized_jobs = cache.get(search_key)
 
     if normalized_jobs is None:
@@ -313,6 +350,7 @@ async def search_jobs(
     filtered_jobs = _filter_jobs(
         normalized_jobs,
         query=q,
+        country=country,
         location=location,
         remote=remote,
         employment_type=employment_type,

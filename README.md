@@ -18,7 +18,7 @@ Teams building with job data usually run into the same issues:
 - raw listings break downstream product logic for filtering, ranking, and dashboards
 - maintaining ingestion and cleanup becomes an ongoing cost that slows product development
 
-Job Intelligence API helps by turning multiple public job sources into cleaner, more usable records so you can focus on the product experience instead of data maintenance.
+Job Intelligence API helps by turning multiple public job sources, including Turkish market listings, into cleaner, more usable records so you can focus on the product experience instead of data maintenance.
 
 ## Who This API Is For
 
@@ -33,7 +33,7 @@ Job Intelligence API helps by turning multiple public job sources into cleaner, 
 - Launch faster with structured job data instead of raw listing pages
 - Keep your dataset cleaner with built-in duplicate handling
 - Build search, matching, and analytics features on normalized job records
-- Turn stored listings into usable market signals with skills, company, and location insights
+- Turn stored listings into usable market signals with skills, company, location, and lightweight language hints
 - Integrate quickly with simple API key auth and predictable JSON responses
 - Start small and stay practical with a beginner-friendly setup, Swagger docs, and Docker support
 
@@ -135,6 +135,7 @@ curl -H "X-API-Key: your_api_key_here" "http://127.0.0.1:8000/jobs/search?q=engi
   "data": {
     "query": "engineer",
     "filters": {
+      "country": null,
       "location": null,
       "remote": true,
       "employment_type": null,
@@ -153,6 +154,7 @@ curl -H "X-API-Key: your_api_key_here" "http://127.0.0.1:8000/jobs/search?q=engi
         "source": "arbeitnow",
         "source_job_id": "1001",
         "source_job_url": "https://example.com/jobs/1001",
+        "language": "en",
         "title": "Senior Python Backend Engineer",
         "normalized_title": "Python Backend Engineer",
         "company": "Acme",
@@ -173,6 +175,7 @@ curl -H "X-API-Key: your_api_key_here" "http://127.0.0.1:8000/jobs/search?q=engi
         "source": "remotive",
         "source_job_id": "1002",
         "source_job_url": "https://example.com/jobs/1002",
+        "language": "en",
         "title": "Platform Engineer",
         "normalized_title": "Platform Engineer",
         "company": "Northstar",
@@ -210,6 +213,7 @@ curl -H "X-API-Key: your_api_key_here" "http://127.0.0.1:8000/jobs/8eb5a31de77f3
       "source": "arbeitnow",
       "source_job_id": "1001",
       "source_job_url": "https://example.com/jobs/1001",
+      "language": "en",
       "title": "Senior Python Backend Engineer",
       "normalized_title": "Python Backend Engineer",
       "company": "Acme",
@@ -270,6 +274,14 @@ curl -H "X-API-Key: your_api_key_here" "http://127.0.0.1:8000/insights/locations
 ```
 
 Example result: top normalized job locations currently seen in the stored dataset.
+
+### Filter Turkey-Related Jobs
+
+```bash
+curl -H "X-API-Key: your_api_key_here" "http://127.0.0.1:8000/jobs/search?country=TR&limit=5"
+```
+
+Use `country=TR` to keep jobs whose stored location includes signals such as `Turkey`, `Türkiye`, `Istanbul`, `Ankara`, `Izmir`, or `TR`.
 
 ## Authentication
 
@@ -369,6 +381,7 @@ Helpful optional variables:
 - `ARBEITNOW_SOURCE_URL`: defaults to the Arbeitnow public job API
 - `REMOTIVE_SOURCE_URL`: defaults to the Remotive public job API
 - `THEMUSE_SOURCE_URL`: defaults to The Muse public jobs API
+- `KARIYER_SOURCE_URL`: defaults to a public Kariyer software jobs listing page
 - `LOG_LEVEL`: defaults to `INFO`
 
 ### First Requests to Try

@@ -28,6 +28,7 @@ def test_normalizer_extracts_structured_fields_from_clear_evidence():
     job = normalizer.normalize_job(raw_job)
 
     assert job.source == "arbeitnow"
+    assert job.language == "en"
     assert job.normalized_title == "API Platform Engineer"
     assert job.remote_type == RemoteTypeEnum.remote
     assert job.employment_type == EmploymentTypeEnum.full_time
@@ -52,6 +53,7 @@ def test_normalizer_returns_nulls_for_missing_or_malformed_inference_fields():
     job = normalizer.normalize_job(raw_job)
 
     assert job.source_job_url is None
+    assert job.language == "en"
     assert job.normalized_title == "Platform Engineer"
     assert job.remote_type is None
     assert job.employment_type is None
@@ -73,3 +75,19 @@ def test_normalizer_extracts_skills_from_aliases_in_title_and_snippet():
     job = normalizer.normalize_job(raw_job)
 
     assert job.skills == ["kubernetes", "node", "postgresql", "typescript"]
+    assert job.language == "en"
+
+
+def test_normalizer_detects_turkish_language_from_title_characters():
+    normalizer = _build_normalizer()
+    raw_job = RawJobListing(
+        source="kariyer",
+        source_job_id="tr-1001",
+        title="Yazılım Geliştirici",
+        company="Istanbul Tech",
+        location_raw="Istanbul, Turkey",
+    )
+
+    job = normalizer.normalize_job(raw_job)
+
+    assert job.language == "tr"

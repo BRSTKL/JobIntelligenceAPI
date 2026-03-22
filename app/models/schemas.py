@@ -33,6 +33,11 @@ class RemoteTypeEnum(str, Enum):
     onsite = "onsite"
 
 
+class LanguageCodeEnum(str, Enum):
+    tr = "tr"
+    en = "en"
+
+
 class ErrorInfo(BaseModel):
     code: str = Field(..., description="Machine-readable error code.")
     message: str = Field(..., description="Human-readable error message.")
@@ -80,6 +85,7 @@ class JobRecord(BaseModel):
     source: str
     source_job_id: str | None = None
     source_job_url: HttpUrl | None = None
+    language: LanguageCodeEnum | None = None
     title: str | None = None
     normalized_title: str | None = None
     company: str | None = None
@@ -97,6 +103,7 @@ class JobRecord(BaseModel):
 
 
 class SearchFilters(BaseModel):
+    country: str | None = None
     location: str | None = None
     remote: bool | None = None
     employment_type: EmploymentTypeEnum | None = None

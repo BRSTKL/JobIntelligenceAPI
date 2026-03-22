@@ -8,6 +8,8 @@ from pathlib import Path
 
 from app.models.schemas import JobRecord
 
+TURKISH_TITLE_CHARACTERS = set("çğıöşüÇĞİÖŞÜı")
+
 
 class SQLiteRepository:
     """A lightweight SQLite repository for storing normalized jobs."""
@@ -40,6 +42,7 @@ class SQLiteRepository:
                 source TEXT NOT NULL,
                 source_job_id TEXT,
                 source_job_url TEXT,
+                language TEXT,
                 title TEXT,
                 normalized_title TEXT,
                 company TEXT,
@@ -61,7 +64,9 @@ class SQLiteRepository:
             """
         )
         self._ensure_timestamp_columns(connection)
+        self._ensure_language_column(connection)
         self._backfill_timestamp_columns(connection)
+        self._backfill_language_column(connection)
         connection.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_jobs_source_url
@@ -170,6 +175,7 @@ class SQLiteRepository:
                 source,
                 source_job_id,
                 source_job_url,
+                language,
                 title,
                 normalized_title,
                 company,
@@ -193,6 +199,7 @@ class SQLiteRepository:
                 :source,
                 :source_job_id,
                 :source_job_url,
+                :language,
                 :title,
                 :normalized_title,
                 :company,
@@ -232,6 +239,7 @@ class SQLiteRepository:
                 source = :source,
                 source_job_id = :source_job_id,
                 source_job_url = :source_job_url,
+                language = :language,
                 title = :title,
                 normalized_title = :normalized_title,
                 company = :company,
@@ -290,12 +298,27 @@ class SQLiteRepository:
             if column_name not in existing_columns:
                 connection.execute(f"ALTER TABLE jobs ADD COLUMN {column_name} TEXT")
 
+    def _ensure_language_column(self, connection: sqlite3.Connection) -> None:
+        """Add the language column for older databases that predate language detection."""
+        existing_columns = self._get_column_names(connection)
+        if "language" not in existing_columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN language TEXT")
+
     def _backfill_timestamp_columns(self, connection: sqlite3.Connection) -> None:
         """Populate missing timestamp values so older rows remain readable."""
         timestamp = self._current_timestamp()
         connection.execute("UPDATE jobs SET created_at = ? WHERE created_at IS NULL", (timestamp,))
         connection.execute("UPDATE jobs SET updated_at = created_at WHERE updated_at IS NULL")
         connection.execute("UPDATE jobs SET last_seen_at = updated_at WHERE last_seen_at IS NULL")
+
+    def _backfill_language_column(self, connection: sqlite3.Connection) -> None:
+        """Populate missing language values using the stored title text."""
+        rows = connection.execute("SELECT id, title FROM jobs WHERE language IS NULL").fetchall()
+        for row in rows:
+            connection.execute(
+                "UPDATE jobs SET language = ? WHERE id = ?",
+                (self._detect_language(row["title"]), row["id"]),
+            )
 
     def _get_column_names(self, connection: sqlite3.Connection) -> set[str]:
         """Return the current jobs table column names."""
@@ -318,3 +341,11 @@ class SQLiteRepository:
         payload.pop("last_seen_at", None)
         payload["skills"] = json.loads(payload.pop("skills_json") or "[]")
         return JobRecord.model_validate(payload)
+
+    @staticmethod
+    def _detect_language(title: str | None) -> str:
+        """Mirror the simple tr/en title heuristic for repository backfills."""
+        title_text = title or ""
+        if any(character in TURKISH_TITLE_CHARACTERS for character in title_text):
+            return "tr"
+        return "en"

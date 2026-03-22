@@ -26,6 +26,7 @@ def _job(
         source="remoteok",
         source_job_id=source_job_id,
         source_job_url=source_job_url,
+        language="en",
         title=title,
         normalized_title="Backend Engineer",
         company=company,
@@ -72,6 +73,7 @@ def test_repository_stores_new_job_and_reads_it_by_id():
     assert rows[0]["last_seen_at"] == _iso(inserted_at)
     assert stored_job is not None
     assert stored_job.id == "job-1"
+    assert stored_job.language == "en"
     assert str(stored_job.source_job_url) == "https://example.com/jobs/1001"
 
 
@@ -178,3 +180,58 @@ def test_repository_falls_back_to_id_based_upsert_when_source_job_url_is_missing
     assert rows[0]["last_seen_at"] == _iso(second_seen)
     assert stored_job is not None
     assert stored_job.source_job_url is None
+
+
+def test_repository_backfills_language_for_older_databases():
+    repository = SQLiteRepository(_memory_db_uri("repository-language-backfill"))
+
+    with repository._connect() as connection:
+        connection.execute(
+            """
+            CREATE TABLE jobs (
+                id TEXT PRIMARY KEY,
+                source TEXT NOT NULL,
+                source_job_id TEXT,
+                source_job_url TEXT,
+                title TEXT,
+                normalized_title TEXT,
+                company TEXT,
+                location_raw TEXT,
+                location_city TEXT,
+                location_country TEXT,
+                remote_type TEXT,
+                employment_type TEXT,
+                seniority_level TEXT,
+                salary_text TEXT,
+                description_snippet TEXT,
+                skills_json TEXT NOT NULL,
+                posted_at TEXT,
+                freshness_days INTEGER,
+                created_at TEXT,
+                updated_at TEXT,
+                last_seen_at TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO jobs (
+                id, source, source_job_id, source_job_url, title, normalized_title, company,
+                location_raw, location_city, location_country, remote_type, employment_type,
+                seniority_level, salary_text, description_snippet, skills_json, posted_at,
+                freshness_days, created_at, updated_at, last_seen_at
+            ) VALUES (
+                'legacy-job', 'kariyer', 'legacy-1', 'https://example.com/jobs/legacy',
+                'Yazılım Geliştirici', 'Yazılım Geliştirici', 'Legacy Co', 'Istanbul, Turkey',
+                'Istanbul', 'Turkey', 'remote', 'full_time', 'mid', NULL, 'Legacy snippet',
+                '[]', NULL, NULL, '2026-03-22T09:00:00Z', '2026-03-22T09:00:00Z', '2026-03-22T09:00:00Z'
+            )
+            """
+        )
+        connection.commit()
+
+    repository.initialize()
+    stored_job = repository.get_job("legacy-job")
+
+    assert stored_job is not None
+    assert stored_job.language == "tr"

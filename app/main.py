@@ -77,7 +77,7 @@ def _log_startup_summary(settings: Settings, api_key_count: int) -> None:
     logger.info(
         (
             "Application startup complete | service=%s version=%s host=0.0.0.0 port=%s "
-            "sqlite_db_path=%s sources=arbeitnow=%s,remotive=%s,themuse=%s "
+            "sqlite_db_path=%s sources=arbeitnow=%s,remotive=%s,themuse=%s,kariyer=%s "
             "cache_ttl_seconds=%s default_page_size=%s max_page_size=%s "
             "api_key_count=%s health_probe=/healthz"
         ),
@@ -88,6 +88,7 @@ def _log_startup_summary(settings: Settings, api_key_count: int) -> None:
         settings.arbeitnow_source_url,
         settings.remotive_source_url,
         settings.themuse_source_url,
+        settings.kariyer_source_url,
         settings.cache_ttl_seconds,
         settings.default_page_size,
         settings.max_page_size,

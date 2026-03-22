@@ -50,11 +50,13 @@ async def test_multi_source_fetcher_continues_when_one_source_fails(monkeypatch)
         arbeitnow_source_url="https://arbeitnow.test/jobs",
         remotive_source_url="https://remotive.test/jobs",
         themuse_source_url="https://themuse.test/jobs",
+        kariyer_source_url="https://kariyer.test/jobs",
     )
     responses = {
         "https://arbeitnow.test/jobs": '{"jobs":[{"id":"1"}]}',
         "https://remotive.test/jobs": httpx.ConnectError("blocked"),
         "https://themuse.test/jobs": '{"results":[{"id":"3"}]}',
+        "https://kariyer.test/jobs": "<html><body><div>kariyer</div></body></html>",
     }
 
     monkeypatch.setattr(
@@ -65,7 +67,8 @@ async def test_multi_source_fetcher_continues_when_one_source_fails(monkeypatch)
     fetcher = MultiSourceJobFetcher(settings)
     payloads = await fetcher.fetch_source_payloads()
 
-    assert [payload.source for payload in payloads] == ["arbeitnow", "themuse"]
+    assert [payload.source for payload in payloads] == ["arbeitnow", "themuse", "kariyer"]
+    assert payloads[-1].payload_type == "html"
 
 
 @pytest.mark.anyio
@@ -75,11 +78,13 @@ async def test_multi_source_fetcher_raises_when_all_sources_fail(monkeypatch):
         arbeitnow_source_url="https://arbeitnow.test/jobs",
         remotive_source_url="https://remotive.test/jobs",
         themuse_source_url="https://themuse.test/jobs",
+        kariyer_source_url="https://kariyer.test/jobs",
     )
     responses = {
         "https://arbeitnow.test/jobs": httpx.ConnectError("blocked"),
         "https://remotive.test/jobs": httpx.ConnectError("blocked"),
         "https://themuse.test/jobs": httpx.ConnectError("blocked"),
+        "https://kariyer.test/jobs": httpx.ConnectError("blocked"),
     }
 
     monkeypatch.setattr(
