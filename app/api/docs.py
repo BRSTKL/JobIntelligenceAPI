@@ -53,7 +53,7 @@ UPSTREAM_ERROR_EXAMPLE = {
     "data": None,
     "error": {
         "code": "upstream_source_error",
-        "message": "Failed to fetch public job listings from the configured source.",
+        "message": "Failed to fetch public job listings from the configured sources.",
         "details": None,
     },
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from fastapi import APIRouter, Path, Query, Request, Security
@@ -21,6 +22,7 @@ from app.models.schemas import (
     JobDetailData,
     JobDetailEnvelope,
     JobRecord,
+    RawJobListing,
     JobSearchData,
     JobSearchEnvelope,
     PaginationMeta,
@@ -53,9 +55,9 @@ SEARCH_SUCCESS_EXAMPLE = {
         "jobs": [
             {
                 "id": "8eb5a31de77f3c2a3fbb3f69",
-                "source": "remoteok",
+                "source": "arbeitnow",
                 "source_job_id": "1001",
-                "source_job_url": "https://remoteok.com/remote-jobs/1001",
+                "source_job_url": "https://www.arbeitnow.com/jobs/1001",
                 "title": "Senior Python Backend Engineer",
                 "normalized_title": "Python Backend Engineer",
                 "company": "Acme",
@@ -97,6 +99,44 @@ JOB_NOT_FOUND_EXAMPLE = {
 }
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"], dependencies=[Security(require_api_key)])
+
+
+def _canonicalize_url(value: str | None) -> str | None:
+    """Build a simple canonical form so the same URL can be deduplicated reliably."""
+    if not value:
+        return None
+
+    parsed = urlsplit(value.strip())
+    if not parsed.scheme or not parsed.netloc:
+        return value.strip().rstrip("/").lower()
+
+    normalized_path = parsed.path.rstrip("/")
+    return urlunsplit(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            normalized_path,
+            parsed.query,
+            "",
+        )
+    )
+
+
+def _deduplicate_raw_jobs(raw_jobs: list[RawJobListing]) -> list[RawJobListing]:
+    """Keep the first job seen for each source URL and preserve source-order precedence."""
+    deduplicated_jobs: list[RawJobListing] = []
+    seen_urls: set[str] = set()
+
+    for raw_job in raw_jobs:
+        canonical_url = _canonicalize_url(raw_job.source_job_url)
+        if canonical_url:
+            if canonical_url in seen_urls:
+                continue
+            seen_urls.add(canonical_url)
+
+        deduplicated_jobs.append(raw_job)
+
+    return deduplicated_jobs
 
 
 def _cache_key(
@@ -189,8 +229,9 @@ def _filter_jobs(
     response_model=JobSearchEnvelope,
     summary="Search structured job data",
     description=(
-        "Fetch public job listings, normalize them into consistent records, persist deduplicated "
-        "results, and return paginated job data for search, matching, or analytics experiences."
+        "Fetch public job listings from multiple sources, normalize them into consistent records, "
+        "persist deduplicated results, and return paginated job data for search, matching, or "
+        "analytics experiences."
     ),
     response_description="Standard success envelope containing paginated job search results.",
     responses={
@@ -255,13 +296,14 @@ async def search_jobs(
     if normalized_jobs is None:
         logger.info("Cache miss for search key '%s'", search_key)
         try:
-            html = await fetcher.fetch_jobs_page(q)
+            source_payloads = await fetcher.fetch_source_payloads(q)
         except httpx.HTTPError as exc:
-            logger.exception("Failed to fetch public job listings")
-            raise UpstreamSourceError("Failed to fetch public job listings from the configured source.") from exc
+            logger.exception("Failed to fetch public job listings from all configured sources")
+            raise UpstreamSourceError("Failed to fetch public job listings from the configured sources.") from exc
 
-        # Split the source page into raw records first, then normalize them into the API shape.
-        raw_jobs = parser.parse_jobs(html)
+        # Split each successful source payload into raw records, then normalize them into the API shape.
+        raw_jobs = parser.parse_source_payloads(source_payloads)
+        raw_jobs = _deduplicate_raw_jobs(raw_jobs)
         normalized_jobs = normalizer.normalize_jobs(raw_jobs)
         normalized_jobs = repository.upsert_jobs(normalized_jobs)
         cache.set(search_key, normalized_jobs)

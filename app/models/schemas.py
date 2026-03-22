@@ -61,6 +61,7 @@ class HealthEnvelope(BaseModel):
 
 
 class RawJobListing(BaseModel):
+    source: str | None = None
     source_job_id: str | None = None
     source_job_url: str | None = None
     title: str | None = None

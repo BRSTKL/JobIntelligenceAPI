@@ -75,7 +75,7 @@ def test_repository_stores_new_job_and_reads_it_by_id():
     assert str(stored_job.source_job_url) == "https://example.com/jobs/1001"
 
 
-def test_repository_deduplicates_by_source_and_source_job_url():
+def test_repository_deduplicates_by_source_job_url_across_sources():
     repository = SQLiteRepository(_memory_db_uri("repository-dedupe"))
     repository.initialize()
 
@@ -96,6 +96,7 @@ def test_repository_deduplicates_by_source_and_source_job_url():
         source_job_url="https://example.com/jobs/1001",
         title="Senior Backend Engineer",
     )
+    duplicate_job.source = "remotive"
 
     repository.upsert_jobs([first_job])
     persisted_jobs = repository.upsert_jobs([duplicate_job])
@@ -104,6 +105,7 @@ def test_repository_deduplicates_by_source_and_source_job_url():
 
     assert len(rows) == 1
     assert rows[0]["id"] == "job-1"
+    assert rows[0]["source"] == "remotive"
     assert rows[0]["source_job_id"] == "9999"
     assert rows[0]["title"] == "Senior Backend Engineer"
     assert rows[0]["created_at"] == _iso(first_seen)

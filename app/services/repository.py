@@ -68,6 +68,12 @@ class SQLiteRepository:
             ON jobs (source, source_job_url)
             """
         )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_jobs_source_job_url
+            ON jobs (source_job_url)
+            """
+        )
         connection.commit()
 
         if connection is not self._keepalive_connection:
@@ -131,27 +137,26 @@ class SQLiteRepository:
     def _find_existing_row(self, connection: sqlite3.Connection, job: JobRecord) -> sqlite3.Row | None:
         """Find an existing row using URL-first deduplication and ID as a fallback."""
         if job.source_job_url:
-            row = self._find_row_by_source_and_url(connection, job.source, str(job.source_job_url))
+            row = self._find_row_by_source_job_url(connection, str(job.source_job_url))
             if row is not None:
                 return row
         return connection.execute("SELECT * FROM jobs WHERE id = ?", (job.id,)).fetchone()
 
-    def _find_row_by_source_and_url(
+    def _find_row_by_source_job_url(
         self,
         connection: sqlite3.Connection,
-        source: str,
         source_job_url: str,
     ) -> sqlite3.Row | None:
-        """Return the oldest matching row for a source and source URL pair."""
+        """Return the oldest matching row for a source URL regardless of source name."""
         return connection.execute(
             """
             SELECT *
             FROM jobs
-            WHERE source = ? AND source_job_url = ?
+            WHERE source_job_url = ?
             ORDER BY created_at ASC, rowid ASC
             LIMIT 1
             """,
-            (source, source_job_url),
+            (source_job_url,),
         ).fetchone()
 
     def _insert_job(self, connection: sqlite3.Connection, job: JobRecord) -> JobRecord:

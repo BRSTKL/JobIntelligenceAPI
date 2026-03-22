@@ -92,10 +92,10 @@ REMOTE_PATTERNS: dict[RemoteTypeEnum, tuple[re.Pattern[str], ...]] = {
 
 EMPLOYMENT_PATTERNS: dict[EmploymentTypeEnum, tuple[re.Pattern[str], ...]] = {
     EmploymentTypeEnum.full_time: (
-        re.compile(r"\bfull[\s-]?time\b", re.IGNORECASE),
+        re.compile(r"\bfull[\s_-]?time\b", re.IGNORECASE),
         re.compile(r"\bpermanent\b", re.IGNORECASE),
     ),
-    EmploymentTypeEnum.part_time: (re.compile(r"\bpart[\s-]?time\b", re.IGNORECASE),),
+    EmploymentTypeEnum.part_time: (re.compile(r"\bpart[\s_-]?time\b", re.IGNORECASE),),
     EmploymentTypeEnum.contract: (
         re.compile(r"\bcontract\b", re.IGNORECASE),
         re.compile(r"\bfreelance\b", re.IGNORECASE),
@@ -198,6 +198,21 @@ TITLE_ACRONYMS = {
     "ux": "UX",
 }
 LOWERCASE_TITLE_WORDS = {"and", "for", "in", "of", "on", "to", "with"}
+IGNORED_SKILL_TAGS = {
+    "anywhere",
+    "contract",
+    "full-time",
+    "full time",
+    "hybrid",
+    "internship",
+    "on-site",
+    "onsite",
+    "part-time",
+    "part time",
+    "remote",
+    "temporary",
+    "worldwide",
+}
 
 
 class JobNormalizer:
@@ -205,10 +220,10 @@ class JobNormalizer:
 
     def __init__(
         self,
-        source_name: str,
+        source_name: str = "public-source",
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
-        self.source_name = source_name
+        self.default_source_name = source_name
         self.now_provider = now_provider or (lambda: datetime.now(tz=UTC))
 
     def normalize_jobs(self, jobs: list[RawJobListing]) -> list[JobRecord]:
@@ -223,9 +238,10 @@ class JobNormalizer:
 
     def normalize_job(self, raw_job: RawJobListing) -> JobRecord:
         """Normalize one raw job into the stable API response shape."""
+        source_name = raw_job.source or self.default_source_name
         safe_source_job_url = self._normalize_source_job_url(raw_job.source_job_url)
         source_job_id = raw_job.source_job_id or self._fallback_source_job_id(raw_job, safe_source_job_url)
-        identity = self._build_identity(source_job_id, safe_source_job_url)
+        identity = self._build_identity(source_name, source_job_id, safe_source_job_url)
         description_snippet = self._build_description_snippet(raw_job.description_text)
         posted_at = self._parse_posted_at(raw_job.posted_at_raw)
         evidence_text = self._build_evidence_text(raw_job, description_snippet)
@@ -233,7 +249,7 @@ class JobNormalizer:
 
         return JobRecord(
             id=self._stable_hash(identity),
-            source=self.source_name,
+            source=source_name,
             source_job_id=source_job_id,
             source_job_url=safe_source_job_url,
             title=raw_job.title,
@@ -247,14 +263,14 @@ class JobNormalizer:
             seniority_level=self._extract_seniority_level(evidence_text),
             salary_text=raw_job.salary_text,
             description_snippet=description_snippet,
-            skills=self._extract_skills(raw_job.title, description_snippet),
+            skills=self._extract_skills(raw_job.tags, raw_job.title, description_snippet),
             posted_at=posted_at,
             freshness_days=self._calculate_freshness_days(posted_at),
         )
 
-    def _build_identity(self, source_job_id: str, source_job_url: str | None) -> str:
+    def _build_identity(self, source_name: str, source_job_id: str, source_job_url: str | None) -> str:
         """Build a stable identity string for hashing into the internal job ID."""
-        return f"{self.source_name}:{source_job_id}:{source_job_url or ''}"
+        return f"{source_name}:{source_job_id}:{source_job_url or ''}"
 
     def _fallback_source_job_id(self, raw_job: RawJobListing, source_job_url: str | None) -> str:
         """Create a stable fallback source ID when the provider does not expose one."""
@@ -395,22 +411,51 @@ class JobNormalizer:
         """Check whether any compiled regex matches the provided text."""
         return any(pattern.search(text) for pattern in patterns)
 
-    def _extract_skills(self, title: str | None, description_snippet: str | None) -> list[str]:
-        """Extract skills from the cleaned title and description snippet."""
-        searchable_text = " ".join(filter(None, [self._clean_text(title), description_snippet])).lower()
-        if not searchable_text:
-            return []
-
+    def _extract_skills(
+        self,
+        tags: list[str],
+        title: str | None,
+        description_snippet: str | None,
+    ) -> list[str]:
+        """Extract skills from source tags first, then enrich them from text."""
         skills: set[str] = set()
-        for alias, canonical_name in SKILL_ALIASES.items():
-            if self._contains_keyword(searchable_text, alias):
-                skills.add(canonical_name)
 
-        for canonical_name, keywords in SKILL_KEYWORDS.items():
-            if any(self._contains_keyword(searchable_text, keyword) for keyword in keywords):
-                skills.add(canonical_name)
+        for tag in tags:
+            normalized_tag = self._normalize_skill_tag(tag)
+            if normalized_tag:
+                skills.add(normalized_tag)
+
+        searchable_text = " ".join(filter(None, [self._clean_text(title), description_snippet])).lower()
+        if searchable_text:
+            for alias, canonical_name in SKILL_ALIASES.items():
+                if self._contains_keyword(searchable_text, alias):
+                    skills.add(canonical_name)
+
+            for canonical_name, keywords in SKILL_KEYWORDS.items():
+                if any(self._contains_keyword(searchable_text, keyword) for keyword in keywords):
+                    skills.add(canonical_name)
 
         return sorted(skills)
+
+    def _normalize_skill_tag(self, tag: str | None) -> str | None:
+        """Turn a source tag into a stable skill value when it looks useful."""
+        cleaned_tag = self._clean_text(tag)
+        if not cleaned_tag:
+            return None
+
+        lowered = cleaned_tag.lower()
+        if lowered in IGNORED_SKILL_TAGS:
+            return None
+        if lowered in SKILL_ALIASES:
+            return SKILL_ALIASES[lowered]
+        if lowered in SKILL_KEYWORDS:
+            return lowered
+
+        for canonical_name, keywords in SKILL_KEYWORDS.items():
+            if lowered in keywords:
+                return canonical_name
+
+        return lowered
 
     @staticmethod
     def _contains_keyword(text: str, keyword: str) -> bool:

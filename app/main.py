@@ -24,10 +24,10 @@ from app.core.exceptions import ApiError
 from app.core.logging import configure_logging, reset_request_id, set_request_id
 from app.core.responses import build_error_response
 from app.services.cache import MemoryCache
-from app.services.fetcher import PublicJobFetcher
 from app.services.intelligence import IntelligenceService
+from app.services.multi_source_fetcher import MultiSourceJobFetcher
 from app.services.normalizer import JobNormalizer
-from app.services.parser import RemoteOkParser
+from app.services.parser import PublicJobParser
 from app.services.repository import SQLiteRepository
 
 
@@ -77,15 +77,17 @@ def _log_startup_summary(settings: Settings, api_key_count: int) -> None:
     logger.info(
         (
             "Application startup complete | service=%s version=%s host=0.0.0.0 port=%s "
-            "sqlite_db_path=%s source_name=%s source_base_url=%s cache_ttl_seconds=%s "
-            "default_page_size=%s max_page_size=%s api_key_count=%s health_probe=/healthz"
+            "sqlite_db_path=%s sources=arbeitnow=%s,remotive=%s,themuse=%s "
+            "cache_ttl_seconds=%s default_page_size=%s max_page_size=%s "
+            "api_key_count=%s health_probe=/healthz"
         ),
         settings.app_name,
         settings.app_version,
         settings.port,
         settings.sqlite_db_path,
-        settings.source_name,
-        settings.source_base_url,
+        settings.arbeitnow_source_url,
+        settings.remotive_source_url,
+        settings.themuse_source_url,
         settings.cache_ttl_seconds,
         settings.default_page_size,
         settings.max_page_size,
@@ -126,9 +128,9 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.valid_api_keys = set(settings.api_keys)
     app.state.cache = MemoryCache(settings.cache_ttl_seconds)
-    app.state.fetcher = PublicJobFetcher(settings)
-    app.state.parser = RemoteOkParser(settings.source_base_url)
-    app.state.normalizer = JobNormalizer(settings.source_name)
+    app.state.fetcher = MultiSourceJobFetcher(settings)
+    app.state.parser = PublicJobParser()
+    app.state.normalizer = JobNormalizer()
     app.state.intelligence = IntelligenceService()
     app.state.repository = SQLiteRepository(settings.sqlite_db_path)
 

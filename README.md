@@ -18,7 +18,7 @@ Teams building with job data usually run into the same issues:
 - raw listings break downstream product logic for filtering, ranking, and dashboards
 - maintaining ingestion and cleanup becomes an ongoing cost that slows product development
 
-Job Intelligence API helps by turning public job listings into cleaner, more usable records so you can focus on the product experience instead of data maintenance.
+Job Intelligence API helps by turning multiple public job sources into cleaner, more usable records so you can focus on the product experience instead of data maintenance.
 
 ## Who This API Is For
 
@@ -150,9 +150,9 @@ curl -H "X-API-Key: your_api_key_here" "http://127.0.0.1:8000/jobs/search?q=engi
     "jobs": [
       {
         "id": "8eb5a31de77f3c2a3fbb3f69",
-        "source": "remoteok",
+        "source": "arbeitnow",
         "source_job_id": "1001",
-        "source_job_url": "https://remoteok.com/remote-jobs/1001",
+        "source_job_url": "https://example.com/jobs/1001",
         "title": "Senior Python Backend Engineer",
         "normalized_title": "Python Backend Engineer",
         "company": "Acme",
@@ -170,9 +170,9 @@ curl -H "X-API-Key: your_api_key_here" "http://127.0.0.1:8000/jobs/search?q=engi
       },
       {
         "id": "af786baddfd5dc547c22808f",
-        "source": "remoteok",
+        "source": "remotive",
         "source_job_id": "1002",
-        "source_job_url": "https://remoteok.com/remote-jobs/1002",
+        "source_job_url": "https://example.com/jobs/1002",
         "title": "Platform Engineer",
         "normalized_title": "Platform Engineer",
         "company": "Northstar",
@@ -207,9 +207,9 @@ curl -H "X-API-Key: your_api_key_here" "http://127.0.0.1:8000/jobs/8eb5a31de77f3
   "data": {
     "job": {
       "id": "8eb5a31de77f3c2a3fbb3f69",
-      "source": "remoteok",
+      "source": "arbeitnow",
       "source_job_id": "1001",
-      "source_job_url": "https://remoteok.com/remote-jobs/1001",
+      "source_job_url": "https://example.com/jobs/1001",
       "title": "Senior Python Backend Engineer",
       "normalized_title": "Python Backend Engineer",
       "company": "Acme",
@@ -366,7 +366,9 @@ Helpful optional variables:
 
 - `PORT`: defaults to `8000`
 - `SQLITE_DB_PATH`: defaults to `data/jobs.db`
-- `SOURCE_BASE_URL`: defaults to the current public job source
+- `ARBEITNOW_SOURCE_URL`: defaults to the Arbeitnow public job API
+- `REMOTIVE_SOURCE_URL`: defaults to the Remotive public job API
+- `THEMUSE_SOURCE_URL`: defaults to The Muse public jobs API
 - `LOG_LEVEL`: defaults to `INFO`
 
 ### First Requests to Try

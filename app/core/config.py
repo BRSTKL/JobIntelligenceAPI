@@ -76,13 +76,14 @@ class Settings:
     app_version: str = "0.1.0"
     app_description: str = (
         "Developer-ready API for builders of job boards, career products, matching apps, "
-        "and hiring analytics tools. Turn public job listings into searchable, structured "
+        "and hiring analytics tools. Turn multiple public job sources into searchable, structured "
         "job intelligence without building your own ingestion, cleanup, normalization, "
         "and duplicate-handling pipeline."
     )
     sqlite_db_path: str = "data/jobs.db"
-    source_name: str = "remoteok"
-    source_base_url: str = "https://remoteok.com/json"
+    arbeitnow_source_url: str = "https://www.arbeitnow.com/api/job-board-api"
+    remotive_source_url: str = "https://remotive.com/api/remote-jobs"
+    themuse_source_url: str = "https://www.themuse.com/api/public/jobs?page=1"
     http_timeout_seconds: int = 15
     cache_ttl_seconds: int = 300
     default_page_size: int = 10
@@ -101,8 +102,9 @@ class Settings:
             app_version=os.getenv("APP_VERSION", defaults.app_version),
             app_description=os.getenv("APP_DESCRIPTION", defaults.app_description),
             sqlite_db_path=os.getenv("SQLITE_DB_PATH", defaults.sqlite_db_path),
-            source_name=os.getenv("SOURCE_NAME", defaults.source_name),
-            source_base_url=os.getenv("SOURCE_BASE_URL", defaults.source_base_url),
+            arbeitnow_source_url=os.getenv("ARBEITNOW_SOURCE_URL", defaults.arbeitnow_source_url),
+            remotive_source_url=os.getenv("REMOTIVE_SOURCE_URL", defaults.remotive_source_url),
+            themuse_source_url=os.getenv("THEMUSE_SOURCE_URL", defaults.themuse_source_url),
             http_timeout_seconds=_get_int_env("HTTP_TIMEOUT_SECONDS", defaults.http_timeout_seconds),
             cache_ttl_seconds=_get_int_env("CACHE_TTL_SECONDS", defaults.cache_ttl_seconds),
             default_page_size=_get_int_env("DEFAULT_PAGE_SIZE", defaults.default_page_size),
@@ -122,23 +124,27 @@ class Settings:
         self.app_version = self.app_version.strip()
         self.app_description = self.app_description.strip()
         self.sqlite_db_path = self.sqlite_db_path.strip()
-        self.source_name = self.source_name.strip()
-        self.source_base_url = self.source_base_url.strip()
+        self.arbeitnow_source_url = self.arbeitnow_source_url.strip()
+        self.remotive_source_url = self.remotive_source_url.strip()
+        self.themuse_source_url = self.themuse_source_url.strip()
         self.log_level = self.log_level.strip().upper()
 
         self._validate_required_text("APP_NAME", self.app_name, errors)
         self._validate_required_text("APP_VERSION", self.app_version, errors)
         self._validate_required_text("APP_DESCRIPTION", self.app_description, errors)
         self._validate_required_text("SQLITE_DB_PATH", self.sqlite_db_path, errors)
-        self._validate_required_text("SOURCE_NAME", self.source_name, errors)
-        self._validate_required_text("SOURCE_BASE_URL", self.source_base_url, errors)
+        self._validate_required_text("ARBEITNOW_SOURCE_URL", self.arbeitnow_source_url, errors)
+        self._validate_required_text("REMOTIVE_SOURCE_URL", self.remotive_source_url, errors)
+        self._validate_required_text("THEMUSE_SOURCE_URL", self.themuse_source_url, errors)
 
         self._validate_positive_int("HTTP_TIMEOUT_SECONDS", self.http_timeout_seconds, errors)
         self._validate_positive_int("CACHE_TTL_SECONDS", self.cache_ttl_seconds, errors)
         self._validate_positive_int("DEFAULT_PAGE_SIZE", self.default_page_size, errors)
         self._validate_positive_int("MAX_PAGE_SIZE", self.max_page_size, errors)
         self._validate_port(errors)
-        self._validate_source_url(errors)
+        self._validate_source_url("ARBEITNOW_SOURCE_URL", self.arbeitnow_source_url, errors)
+        self._validate_source_url("REMOTIVE_SOURCE_URL", self.remotive_source_url, errors)
+        self._validate_source_url("THEMUSE_SOURCE_URL", self.themuse_source_url, errors)
         self._validate_log_level(errors)
 
         if self.default_page_size > self.max_page_size:
@@ -162,10 +168,10 @@ class Settings:
         if not isinstance(self.port, int) or not (1 <= self.port <= 65535):
             errors.append("PORT must be an integer between 1 and 65535.")
 
-    def _validate_source_url(self, errors: list[str]) -> None:
-        parsed = urlparse(self.source_base_url)
+    def _validate_source_url(self, name: str, value: str, errors: list[str]) -> None:
+        parsed = urlparse(value)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            errors.append("SOURCE_BASE_URL must be a valid http:// or https:// URL.")
+            errors.append(f"{name} must be a valid http:// or https:// URL.")
 
     def _validate_log_level(self, errors: list[str]) -> None:
         if self.log_level not in VALID_LOG_LEVELS:

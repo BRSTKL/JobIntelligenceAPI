@@ -1,4 +1,5 @@
-from app.services.parser import RemoteOkParser
+from app.services.multi_source_fetcher import SourcePayload
+from app.services.parser import PublicJobParser
 
 
 MALFORMED_HTML = """
@@ -25,30 +26,61 @@ MALFORMED_HTML = """
 </html>
 """
 
-JSON_FEED = """
-[
-  {
-    "last_updated": 1774166402,
-    "legal": "Public feed metadata"
-  },
-  {
-    "id": "1130857",
-    "date": "2026-03-21T00:00:11+00:00",
-    "company": "Vanta",
-    "position": "Brand Designer",
-    "location": "Worldwide",
-    "salary_min": 120000,
-    "salary_max": 150000,
-    "tags": ["design", "figma"],
-    "url": "https://remoteok.com/remote-jobs/1130857",
-    "description": "<p>Design brand systems in Figma.</p>"
-  }
-]
+ARBEITNOW_FEED = """
+{
+  "jobs": [
+    {
+      "id": "1001",
+      "title": "Senior Python Backend Engineer",
+      "company_name": "Acme",
+      "location": "Berlin, Germany",
+      "remote": true,
+      "tags": ["Python", "FastAPI", "Docker"],
+      "url": "https://example.com/jobs/1001",
+      "created_at": "2026-03-20T10:00:00+00:00"
+    }
+  ]
+}
+"""
+
+REMOTIVE_FEED = """
+{
+  "jobs": [
+    {
+      "id": "2001",
+      "title": "Data Engineer",
+      "company_name": "Beta Analytics",
+      "candidate_required_location": "United Kingdom",
+      "job_type": "contract",
+      "tags": ["SQL", "Python"],
+      "url": "https://example.com/jobs/2001",
+      "publication_date": "2026-03-18T08:00:00+00:00"
+    }
+  ]
+}
+"""
+
+THEMUSE_FEED = """
+{
+  "results": [
+    {
+      "id": 3001,
+      "name": "Product Designer",
+      "company": { "name": "Muse Labs" },
+      "locations": [
+        { "name": "Remote" },
+        { "name": "New York, NY" }
+      ],
+      "refs": { "landing_page": "https://example.com/jobs/3001" },
+      "publication_date": "2026-03-17T09:30:00+00:00"
+    }
+  ]
+}
 """
 
 
 def test_parser_handles_malformed_and_partial_rows_without_crashing():
-    parser = RemoteOkParser("https://remoteok.com")
+    parser = PublicJobParser("https://remoteok.com")
 
     jobs = parser.parse_jobs(MALFORMED_HTML)
 
@@ -72,19 +104,35 @@ def test_parser_handles_malformed_and_partial_rows_without_crashing():
     assert attribute_only_job.posted_at_raw == "not-a-date"
 
 
-def test_parser_supports_public_json_feed_records():
-    parser = RemoteOkParser("https://remoteok.com")
+def test_parser_supports_multiple_public_json_sources():
+    parser = PublicJobParser()
 
-    jobs = parser.parse_jobs(JSON_FEED)
+    jobs = parser.parse_source_payloads(
+        [
+            SourcePayload(source="arbeitnow", url="https://www.arbeitnow.com/api/job-board-api", body=ARBEITNOW_FEED),
+            SourcePayload(source="remotive", url="https://remotive.com/api/remote-jobs", body=REMOTIVE_FEED),
+            SourcePayload(source="themuse", url="https://www.themuse.com/api/public/jobs?page=1", body=THEMUSE_FEED),
+        ]
+    )
 
-    assert len(jobs) == 1
-    job = jobs[0]
-    assert job.source_job_id == "1130857"
-    assert job.source_job_url == "https://remoteok.com/remote-jobs/1130857"
-    assert job.title == "Brand Designer"
-    assert job.company == "Vanta"
-    assert job.location_raw == "Worldwide"
-    assert job.salary_text == "$120,000 - $150,000"
-    assert job.description_text == "Design brand systems in Figma."
-    assert job.tags == ["design", "figma"]
-    assert job.remote_type_raw == "remote"
+    assert len(jobs) == 3
+
+    arbeitnow_job = next(job for job in jobs if job.source == "arbeitnow")
+    assert arbeitnow_job.title == "Senior Python Backend Engineer"
+    assert arbeitnow_job.company == "Acme"
+    assert arbeitnow_job.location_raw == "Berlin, Germany"
+    assert arbeitnow_job.tags == ["Python", "FastAPI", "Docker"]
+    assert arbeitnow_job.remote_type_raw == "remote"
+
+    remotive_job = next(job for job in jobs if job.source == "remotive")
+    assert remotive_job.title == "Data Engineer"
+    assert remotive_job.company == "Beta Analytics"
+    assert remotive_job.location_raw == "United Kingdom"
+    assert remotive_job.employment_type_raw == "contract"
+    assert remotive_job.remote_type_raw == "remote"
+
+    themuse_job = next(job for job in jobs if job.source == "themuse")
+    assert themuse_job.title == "Product Designer"
+    assert themuse_job.company == "Muse Labs"
+    assert themuse_job.location_raw == "Remote, New York, NY"
+    assert themuse_job.source_job_url == "https://example.com/jobs/3001"

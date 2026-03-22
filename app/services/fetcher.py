@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class PublicJobFetcher:
-    """Fetch public job listing pages without any authentication workflow."""
+    """Legacy single-source fetcher kept for compatibility with older code paths."""
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -41,6 +41,8 @@ class PublicJobFetcher:
 
     def _get_source_url(self) -> str:
         """Return the public job source URL used by the fetcher."""
+        if hasattr(self.settings, "arbeitnow_source_url"):
+            return self.settings.arbeitnow_source_url
         return self.settings.source_base_url
 
     def _build_headers(self) -> Mapping[str, str]:

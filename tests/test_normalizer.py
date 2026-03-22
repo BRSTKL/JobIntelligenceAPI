@@ -14,17 +14,20 @@ def _build_normalizer() -> JobNormalizer:
 def test_normalizer_extracts_structured_fields_from_clear_evidence():
     normalizer = _build_normalizer()
     raw_job = RawJobListing(
+        source="arbeitnow",
         source_job_id="1001",
-        source_job_url="https://remoteok.com/remote-jobs/1001",
+        source_job_url="https://example.com/jobs/1001",
         title="Senior API Platform Engineer (Remote, Full-time)",
         company="Acme",
         location_raw="Berlin, Germany",
+        tags=["Python", "FastAPI", "Docker"],
         description_text="Build Python, FastAPI, Docker, and AWS services for our platform.",
         posted_at_raw="2026-03-20T10:00:00+00:00",
     )
 
     job = normalizer.normalize_job(raw_job)
 
+    assert job.source == "arbeitnow"
     assert job.normalized_title == "API Platform Engineer"
     assert job.remote_type == RemoteTypeEnum.remote
     assert job.employment_type == EmploymentTypeEnum.full_time
@@ -36,6 +39,7 @@ def test_normalizer_extracts_structured_fields_from_clear_evidence():
 def test_normalizer_returns_nulls_for_missing_or_malformed_inference_fields():
     normalizer = _build_normalizer()
     raw_job = RawJobListing(
+        source=None,
         source_job_id=None,
         source_job_url="not-a-valid-url",
         title="Platform Engineer",
@@ -59,8 +63,10 @@ def test_normalizer_returns_nulls_for_missing_or_malformed_inference_fields():
 def test_normalizer_extracts_skills_from_aliases_in_title_and_snippet():
     normalizer = _build_normalizer()
     raw_job = RawJobListing(
+        source="remotive",
         source_job_id="1002",
         title="Backend Engineer",
+        tags=["Node.js", "K8s"],
         description_text="Work with TS, Node.js, Postgres, and k8s in production.",
     )
 

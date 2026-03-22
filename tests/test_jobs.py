@@ -5,88 +5,62 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.main import create_app
+from app.services.multi_source_fetcher import SourcePayload
 
 
 VALID_API_KEY = "test-api-key"
 INVALID_API_KEY = "wrong-key"
 
-SAMPLE_HTML = """
-<html>
-  <body>
-    <table>
-      <tr class="job" data-id="1001" data-company="Acme" data-position="Senior Python Backend Engineer" data-location="Berlin, Germany" data-tags="Python,FastAPI,Docker" data-employment="Full-time" data-remote="Remote">
-        <td class="company">
-          <a itemprop="url" href="/remote-jobs/1001">
-            <h2 itemprop="title">Senior Python Backend Engineer</h2>
-            <h3 itemprop="name">Acme</h3>
-          </a>
-          <div class="location">Berlin, Germany</div>
-          <div class="salary">$100k - $120k</div>
-          <div class="description">Build FastAPI services with Python, Docker, and AWS.</div>
-          <div class="tags">
-            <h3>Python</h3>
-            <h3>FastAPI</h3>
-            <h3>Docker</h3>
-          </div>
-          <time datetime="2026-03-20T10:00:00+00:00"></time>
-        </td>
-      </tr>
-      <tr class="job" data-id="1002" data-company="Beta Analytics" data-position="Junior Data Analyst" data-location="London, United Kingdom" data-tags="SQL,Python" data-employment="Contract" data-remote="Onsite">
-        <td class="company">
-          <a itemprop="url" href="/remote-jobs/1002">
-            <h2 itemprop="title">Junior Data Analyst</h2>
-            <h3 itemprop="name">Beta Analytics</h3>
-          </a>
-          <div class="location">London, United Kingdom</div>
-          <div class="description">Work with SQL, dashboards, and Python reporting.</div>
-          <div class="tags">
-            <h3>SQL</h3>
-            <h3>Python</h3>
-          </div>
-          <time datetime="2026-03-18T08:00:00+00:00"></time>
-        </td>
-      </tr>
-      <tr class="job" data-id="1003" data-company="Orbit Labs" data-position="Staff Frontend Engineer" data-location="Worldwide" data-tags="TypeScript,React" data-employment="Part-time" data-remote="Hybrid">
-        <td class="company">
-          <a itemprop="url" href="/remote-jobs/1003">
-            <h2 itemprop="title">Staff Frontend Engineer</h2>
-            <h3 itemprop="name">Orbit Labs</h3>
-          </a>
-          <div class="location">Worldwide</div>
-          <div class="description">Build React and TypeScript user interfaces for a global product.</div>
-          <div class="tags">
-            <h3>React</h3>
-            <h3>TypeScript</h3>
-          </div>
-          <time datetime="2026-03-10T09:00:00+00:00"></time>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>
+ARBEITNOW_PAYLOAD = """
+{
+  "jobs": [
+    {
+      "id": "1001",
+      "title": "Senior Python Backend Engineer",
+      "company_name": "Acme",
+      "location": "Berlin, Germany",
+      "remote": true,
+      "job_type": "full_time",
+      "tags": ["Python", "FastAPI", "Docker"],
+      "url": "https://example.com/jobs/1001",
+      "created_at": "2026-03-20T10:00:00+00:00",
+      "description": "Build FastAPI services with Python, Docker, and AWS."
+    }
+  ]
+}
 """
 
-PARTIAL_HTML = """
-<html>
-  <body>
-    <table>
-      <tr class="job" data-id="partial-1">
-        <td class="company">
-          <a href="javascript:void(0)">
-            <h3 itemprop="name">Partial Co</h3>
-          </a>
-          <div class="description"></div>
-        </td>
-      </tr>
-      <tr class="job" data-job-id="partial-2" data-position="Platform Engineer" data-company="Attr Co" data-location="Berlin, Germany" data-date="not-a-date">
-        <td class="company">
-          <div class="description">Work with Python and FastAPI.</div>
-        </td>
-      </tr>
-      <tr class="job"></tr>
-    </table>
-  </body>
-</html>
+REMOTIVE_PAYLOAD = """
+{
+  "jobs": [
+    {
+      "id": "2001",
+      "title": "Junior Data Analyst",
+      "company_name": "Beta Analytics",
+      "candidate_required_location": "London, United Kingdom",
+      "job_type": "contract",
+      "tags": ["SQL", "Python"],
+      "url": "https://example.com/jobs/2001",
+      "publication_date": "2026-03-18T08:00:00+00:00",
+      "description": "Work with SQL, dashboards, and Python reporting."
+    }
+  ]
+}
+"""
+
+THEMUSE_PAYLOAD = """
+{
+  "results": [
+    {
+      "id": 3001,
+      "name": "Staff Frontend Engineer",
+      "company": { "name": "Orbit Labs" },
+      "locations": [{ "name": "Remote" }],
+      "refs": { "landing_page": "https://example.com/jobs/3001" },
+      "publication_date": "2026-03-10T09:00:00+00:00"
+    }
+  ]
+}
 """
 
 
@@ -98,14 +72,22 @@ def _auth_headers(api_key: str = VALID_API_KEY) -> dict[str, str]:
     return {"X-API-Key": api_key}
 
 
-def _build_test_app(monkeypatch):
+def _sample_source_payloads() -> list[SourcePayload]:
+    return [
+        SourcePayload(source="arbeitnow", url="https://www.arbeitnow.com/api/job-board-api", body=ARBEITNOW_PAYLOAD),
+        SourcePayload(source="remotive", url="https://remotive.com/api/remote-jobs", body=REMOTIVE_PAYLOAD),
+        SourcePayload(source="themuse", url="https://www.themuse.com/api/public/jobs?page=1", body=THEMUSE_PAYLOAD),
+    ]
+
+
+def _build_test_app(monkeypatch, payloads: list[SourcePayload] | None = None):
     settings = Settings(sqlite_db_path=_memory_db_uri("jobs"), api_keys=(VALID_API_KEY,))
     app = create_app(settings)
 
-    async def fake_fetch_jobs_page(query=None):
-        return SAMPLE_HTML
+    async def fake_fetch_source_payloads(query=None):
+        return payloads or _sample_source_payloads()
 
-    monkeypatch.setattr(app.state.fetcher, "fetch_jobs_page", fake_fetch_jobs_page)
+    monkeypatch.setattr(app.state.fetcher, "fetch_source_payloads", fake_fetch_source_payloads)
     return app
 
 
@@ -133,6 +115,7 @@ def test_jobs_search_returns_normalized_jobs(monkeypatch):
     assert payload["data"]["count"] == 1
     assert payload["data"]["pagination"]["total_results"] == 1
     assert payload["data"]["jobs"][0]["company"] == "Acme"
+    assert payload["data"]["jobs"][0]["source"] == "arbeitnow"
     assert payload["data"]["jobs"][0]["normalized_title"] == "Python Backend Engineer"
     assert payload["data"]["jobs"][0]["remote_type"] == "remote"
     assert payload["data"]["jobs"][0]["skills"] == ["aws", "docker", "fastapi", "python"]
@@ -156,7 +139,7 @@ def test_jobs_search_supports_pagination_and_job_detail(monkeypatch):
     detail_payload = detail_response.json()
     assert detail_payload["error"] is None
     assert detail_payload["data"]["job"]["id"] == job_id
-    assert detail_payload["data"]["job"]["source"] == "remoteok"
+    assert detail_payload["data"]["job"]["source"] == "remotive"
 
 
 def test_jobs_search_validates_inputs_and_handles_missing_job(monkeypatch):
@@ -176,13 +159,40 @@ def test_jobs_search_validates_inputs_and_handles_missing_job(monkeypatch):
 
 
 def test_jobs_search_handles_partial_records_without_crashing(monkeypatch):
-    settings = Settings(sqlite_db_path=_memory_db_uri("jobs-partial"), api_keys=(VALID_API_KEY,))
-    app = create_app(settings)
-
-    async def fake_fetch_jobs_page(query=None):
-        return PARTIAL_HTML
-
-    monkeypatch.setattr(app.state.fetcher, "fetch_jobs_page", fake_fetch_jobs_page)
+    partial_payloads = [
+        SourcePayload(
+            source="arbeitnow",
+            url="https://www.arbeitnow.com/api/job-board-api",
+            body="""
+            {
+              "jobs": [
+                {
+                  "id": "partial-1",
+                  "company_name": "Partial Co"
+                }
+              ]
+            }
+            """,
+        ),
+        SourcePayload(
+            source="themuse",
+            url="https://www.themuse.com/api/public/jobs?page=1",
+            body="""
+            {
+              "results": [
+                {
+                  "id": 3002,
+                  "name": "Platform Engineer",
+                  "company": { "name": "Attr Co" },
+                  "refs": { "landing_page": null },
+                  "publication_date": "not-a-date"
+                }
+              ]
+            }
+            """,
+        ),
+    ]
+    app = _build_test_app(monkeypatch, payloads=partial_payloads)
 
     with TestClient(app) as client:
         response = client.get("/jobs/search", headers=_auth_headers())
@@ -200,9 +210,9 @@ def test_jobs_search_handles_partial_records_without_crashing(monkeypatch):
     assert partial_company_job["seniority_level"] is None
     assert partial_company_job["freshness_days"] is None
 
-    partial_attr_job = next(job for job in payload["data"]["jobs"] if job["source_job_id"] == "partial-2")
+    partial_attr_job = next(job for job in payload["data"]["jobs"] if job["source_job_id"] == "3002")
     assert partial_attr_job["title"] == "Platform Engineer"
-    assert partial_attr_job["skills"] == ["fastapi", "python"]
+    assert partial_attr_job["skills"] == []
     assert partial_attr_job["freshness_days"] is None
 
 
@@ -225,10 +235,10 @@ def test_jobs_search_returns_upstream_error_envelope(monkeypatch):
     settings = Settings(sqlite_db_path=_memory_db_uri("jobs-upstream"), api_keys=(VALID_API_KEY,))
     app = create_app(settings)
 
-    async def failing_fetch_jobs_page(query=None):
+    async def failing_fetch_source_payloads(query=None):
         raise httpx.ConnectError("boom")
 
-    monkeypatch.setattr(app.state.fetcher, "fetch_jobs_page", failing_fetch_jobs_page)
+    monkeypatch.setattr(app.state.fetcher, "fetch_source_payloads", failing_fetch_source_payloads)
 
     with TestClient(app) as client:
         response = client.get("/jobs/search", headers=_auth_headers())
@@ -237,3 +247,38 @@ def test_jobs_search_returns_upstream_error_envelope(monkeypatch):
     payload = response.json()
     assert payload["data"] is None
     assert payload["error"]["code"] == "upstream_source_error"
+
+
+def test_jobs_search_deduplicates_same_url_across_sources(monkeypatch):
+    duplicate_payloads = [
+        SourcePayload(source="arbeitnow", url="https://www.arbeitnow.com/api/job-board-api", body=ARBEITNOW_PAYLOAD),
+        SourcePayload(
+            source="remotive",
+            url="https://remotive.com/api/remote-jobs",
+            body="""
+            {
+              "jobs": [
+                {
+                  "id": "dup-1",
+                  "title": "Senior Python Backend Engineer",
+                  "company_name": "Acme Mirror",
+                  "candidate_required_location": "Germany",
+                  "job_type": "full_time",
+                  "tags": ["Python"],
+                  "url": "https://example.com/jobs/1001",
+                  "publication_date": "2026-03-20T10:00:00+00:00"
+                }
+              ]
+            }
+            """,
+        ),
+    ]
+    app = _build_test_app(monkeypatch, payloads=duplicate_payloads)
+
+    with TestClient(app) as client:
+        response = client.get("/jobs/search", headers=_auth_headers())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"]["count"] == 1
+    assert payload["data"]["jobs"][0]["source"] == "arbeitnow"
